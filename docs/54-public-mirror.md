@@ -44,7 +44,7 @@ pyproject.toml
 selected architecture / Persona / Canon documentation
 ```
 
-The public `README.md` is generated from the private `PUBLIC_README.md`, not copied from the internal README.
+The public `README.md` is generated from the private `PUBLIC_README.md`, not copied from the internal README. The public `.gitignore` is generated from the dedicated private `PUBLIC_GITIGNORE`, so private repository ignore policy cannot silently suppress reusable package paths in a fresh public checkout.
 
 The exact allow-list lives in `public_mirror_manifest.json`.
 
@@ -68,14 +68,17 @@ private Git history
 
 The first mirror also excludes internal workflow documents whose main value is the canonical repository's server/worktree governance rather than the reusable project design.
 
-## 5. Sanitization
+## 5. Sanitization and publication checks
 
-`scripts/export_public_mirror.py` performs two independent operations:
+`scripts/export_public_mirror.py` performs three independent operations:
 
 1. **selection** — only tracked files matching the explicit include list and not matching the exclude list are copied;
-2. **sanitization + scan** — known machine-specific values are rewritten, RFC1918 addresses and Windows user profile paths are generalized, and high-confidence credential/private-state patterns fail the export.
+2. **sanitization + scan** — known machine-specific values are rewritten, RFC1918 addresses and Windows user profile paths are generalized, and high-confidence credential/private-state patterns fail the export;
+3. **fresh-repository stageability** — the history-free export is initialized temporarily as a fresh Git repository and every physical exported file must remain stageable under the exported `.gitignore`.
 
 The public snapshot is generated from the current working-tree bytes of a clean private checkout. Routine publication therefore requires clean `main`.
+
+The stageability check is important because a valid filesystem export is not sufficient: an unanchored ignore rule can otherwise make source files disappear silently when the public commit is created.
 
 ## 6. First export
 
@@ -100,7 +103,7 @@ export_path=/tmp/tele-Amadeus-export
 PUBLIC_MIRROR_SCAN=PASS
 ```
 
-The exported directory contains no `.git` directory and therefore carries no private commit history.
+The exported directory contains no persistent `.git` directory and therefore carries no private commit history.
 
 ## 7. Publishing the first snapshot
 
@@ -127,11 +130,12 @@ Future publication follows the same one-way path:
 ```text
 private main
 -> sanitized export
--> scan PASS
+-> safety + stageability checks PASS
 -> replace public checkout working tree
 -> review public diff
 -> public commit
 -> push
+-> public CI green
 ```
 
 The public repository is not merged directly into private production. For a useful public contribution:
@@ -152,10 +156,11 @@ This preserves one canonical source of truth and prevents public contributions f
 - Never use `git push --mirror` from private to public.
 - Never make the canonical private repository public as a shortcut.
 - Never assume deleting a sensitive file from the current tree removes it from Git history.
-- Never bypass an exporter safety-scan failure to make a release deadline.
+- Never bypass an exporter safety-scan or stageability failure to make a release deadline.
 - Prefer excluding uncertain material over publishing it and attempting cleanup later.
 - Public publication should remain snapshot-based until there is a concrete reason to build more automation.
+- A public synchronization is not complete until the public CI for the resulting public commit is green.
 
 ## 10. Future automation
 
-A GitHub Action or dedicated publish command can be added later, but only after the manual snapshot process has been exercised successfully. Any automated publisher must keep the same allow-list, separate-history, scan, and one-way-authority properties.
+A GitHub Action or dedicated publish command can be added later, but only after the manual snapshot process has been exercised successfully. Any automated publisher must keep the same allow-list, separate-history, scan, stageability, public-CI, and one-way-authority properties.

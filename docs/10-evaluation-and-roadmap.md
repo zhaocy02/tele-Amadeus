@@ -24,20 +24,24 @@ Updated: **2026-09-04**
 出现问题先归因：
 
 ```text
-persona_global      稳定人格规则本身有问题
-canon_missing       所需行为证据不在 Canon corpus
-retrieval_miss      evidence 存在但没有被取出
-retrieval_noise     取出不该取的 evidence / source routing 错误
-generator_misuse    正确 context 已到达 Generator，但使用方式错误
-state_drift         Character State 更新/调制错误
-memory_boundary     当前事实/shared history/persistent memory authority 错误
-policy_routing      local/LLM policy mode 或 act 错误
-tool_trigger        Web/Vision capability 触发错误
-tool_grounding      外部 evidence provenance/boundedness 不足
-provider_routing    选错 provider/model/capability 或 chat context 泄漏
-provider_protocol   concrete API schema/response extraction 不兼容
+persona_global       稳定人格规则本身有问题
+canon_missing        所需行为证据不在 Canon corpus
+retrieval_miss       evidence 存在但没有被取出
+retrieval_noise      取出不该取的 evidence / source routing 错误
+generator_misuse     正确 context 已到达 Generator，但使用方式错误
+state_drift          Character State 更新/调制错误
+memory_boundary      当前事实/shared history/persistent memory authority 错误
+policy_routing       local/LLM policy mode 或 act 错误
+tool_trigger         Web/Vision capability 触发错误
+tool_grounding       外部 evidence provenance/boundedness 不足
+provider_routing     选错 provider/model/capability 或 chat context 泄漏
+provider_protocol    concrete API schema/response extraction 不兼容
 provider_availability auth/rate-limit/network/upstream availability 问题
-smoke_isolation     production test 本身污染正常 transcript/memory/state
+spontaneity_timing   首条/链式间隔或 provider latency overlap 不自然
+spontaneity_depth    续话频率、burst 长度、停止概率不自然
+spontaneity_race     用户抢话/commit/FIFO 顺序错误
+spontaneity_lineage  transcript/delivery/episode persistence 不一致
+smoke_isolation      production test 本身污染正常 transcript/memory/state
 ```
 
 不要用 Persona 强化去掩盖 retriever/provider/memory bug，也不要用 embeddings 修 corpus 缺失。
@@ -95,13 +99,30 @@ finalize_ms
 response_wait_ms
 ```
 
-Canon Phase 1 evidence显示 local Canon retrieval/context overhead 约 80-100 ms/turn；当前没有 embedding/vector service 的性能理由。
+Canon Phase 1 evidence 显示 local Canon retrieval/context overhead 约 80-100 ms/turn；当前没有 embedding/vector service 的性能理由。
 
 Web Search 继续拆分 hosted-search upstream、tool action count、evidence parsing、post-evidence generation 与 delivery latency。
 
 ### Autonomy / spontaneity
 
-分别看 opportunities/evaluations、SILENT rate、confirmed sends、reply/ignored rate、cooldown/cap/DND blockers、reason labels、interrupt behavior 与 user disable/complaint signals。发送更多不是成功标准。
+长周期 Autonomy 与短周期 Spontaneity 分开评估。
+
+Long-horizon 重点看 opportunities/evaluations、SILENT rate、confirmed sends、reply/ignored rate、cooldown/cap/DND blockers、reason labels 与 user disable/complaint signals。
+
+Short-horizon 重点看：
+
+```text
+first-gap naturalness       1–30s target
+chain-gap naturalness       3–15s target
+burst length                most episodes should stop early
+SILENT behavior             every depth may stop
+user-input priority         inbound input terminates remaining depth
+interrupt behavior          <=1 first-message bounded race
+lineage consistency         Telegram/transcript/delivery/episode agree
+provider continuity         delayed episode keeps per-chat provider selection
+```
+
+发送更多不是成功标准；“最多 7 条”是 hard cap，不是目标数量。
 
 ## 4. Character regression baseline
 
@@ -121,7 +142,7 @@ Vision：无 caption / caption conflict / visual fact boundary
 Web：explicit / recent-past / meta false positive / source provenance / local-date anchor
 Provider：CPA/DeepSeek same-case fidelity / text-vs-vision routing / per-chat isolation
 Autonomy：gate / DND / user-input race
-Spontaneity：delay / cancel / bounded interrupt / no recursive continuation
+Spontaneity：first delay / chain delay / cancel / first-only bounded interrupt / max-7 / lineage
 ```
 
 Production 中确认的 failure 应沉淀成 regression，不只留在聊天记录里。
@@ -139,13 +160,26 @@ DONE  Phase 5.3        hybrid Conversation Policy
 DONE  Phase 5.4        durable production observability
 DONE  Phase 5.5        Telegram Photo / Vision
 DONE  Phase 5.6.1      long-horizon autonomy + production tuning
-DONE  Phase 5.6.2      short-horizon spontaneity implementation; activation remains gated
+DONE  Phase 5.6.2      bounded short-horizon spontaneity episodes + production verification
 DONE  Web Search v1    hosted direct-turn search + provenance
 DONE  Provider Stage 1 CPA/Codex default + DeepSeek text/vision + independent Web Search
 DONE  Web hotfix       recent-past trigger + meta suppression + local-date anchoring
 DONE  Ops hardening    bounded production git-fetch retry
 DONE  Persona/Canon P1 SG/SG0 corpus -> Persona v2.1.0 -> source-aware RAG -> production ON
 ```
+
+Phase 5.6.2 production baseline:
+
+```text
+first target gap        1–30s
+chain target gap        3–15s
+episode cap             7
+inter-episode cooldown  2m
+#2..#7 local gates      40% / 24% / 14% / 8% / 4.5% / 2.5%
+interrupt grace         first message only, <=1.25s
+```
+
+Deployment/status smoke passed with the expected service topology, process gates on and the target chat opted in. Natural-chat observation after this point is calibration evidence rather than an unfinished rollout gate.
 
 ## 6. Persona / Canon Phase 1 closeout
 
@@ -179,11 +213,11 @@ Paired-policy evaluation removed the earlier OFF/ON policy-resampling confound. 
 
 详见 `docs/53-persona-canon-phase1-closeout.md`。
 
-## 7. Active roadmap after Phase 1
+## 7. Active roadmap after current baseline
 
 ### A. Production Character observation -> regression
 
-这是现在 Character 主线。观察真实聊天，不因为一条“感觉不太对”就立即改 Persona/RAG。
+这是现在 Character 主线。观察真实聊天，不因为一条“感觉不太对”就立即改 Persona/RAG/Spontaneity。
 
 ```text
 observe
@@ -194,9 +228,11 @@ observe
 -> guarded rollout
 ```
 
+Spontaneity 现在也进入这条路径：先自然使用；只有出现重复、可分类的问题才重开参数或实现修改。
+
 ### B. Non-persistent production smoke — Issue #103
 
-首次 Canon smoke 证明真实 Telegram test turn 会正常写 transcript/Archivist memory。后续需要 explicit non-persistent test mode，尽量走真实 Persona + Canon + provider + Telegram path，但禁止 normal memory/state/retrospective/autonomy side effects。
+真实 Telegram test turn 会正常写 transcript/Archivist memory。后续需要 explicit non-persistent test mode，尽量走真实 Persona + Canon + provider + Telegram path，但禁止 normal memory/state/retrospective/autonomy side effects。
 
 ### C. Archivist negative/shared-history semantics
 

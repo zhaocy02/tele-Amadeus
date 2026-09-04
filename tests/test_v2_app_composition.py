@@ -5,7 +5,12 @@ from amadeus_bot.app import build_v2_runtime, build_v2_telegram_application
 from amadeus_bot.config import AppSettings, load_settings
 
 
-def _settings(tmp_path: Path, *, enable_web_search: bool = False) -> AppSettings:
+def _settings(
+    tmp_path: Path,
+    *,
+    enable_web_search: bool = False,
+    enable_github_feedback: bool = False,
+) -> AppSettings:
     env = {
         "AMADEUS_ENVIRONMENT": "test",
         "AMADEUS_TELEGRAM_BOT_TOKEN": "test-token",
@@ -15,7 +20,16 @@ def _settings(tmp_path: Path, *, enable_web_search: bool = False) -> AppSettings
         "AMADEUS_PERSONA_V2_PATH": str(Path("profiles/v2/persona_core.json").resolve()),
         "AMADEUS_DATA_DIR": str(tmp_path / "configured-data"),
         "AMADEUS_ENABLE_WEB_SEARCH": "true" if enable_web_search else "false",
+        "AMADEUS_ENABLE_GITHUB_FEEDBACK": "true" if enable_github_feedback else "false",
     }
+    if enable_github_feedback:
+        env.update(
+            {
+                "AMADEUS_GITHUB_APP_CLIENT_ID": "Iv1.example-client",
+                "AMADEUS_GITHUB_APP_INSTALLATION_ID": "12345",
+                "AMADEUS_GITHUB_APP_PRIVATE_KEY_PATH": str(tmp_path / "private-app.pem"),
+            }
+        )
     return load_settings(env, cwd=tmp_path)
 
 
@@ -63,5 +77,23 @@ def test_build_v2_telegram_application_is_explicit_and_keeps_same_isolated_runti
         assert (override / "runtime.sqlite").exists()
         assert (override / "autonomy.sqlite").exists()
         assert (override / "turn-telemetry.sqlite").exists()
+        assert app.github_feedback_client is None
+        assert app.github_token_provider is None
+    finally:
+        asyncio.run(app.aclose())
+
+
+def test_github_feedback_composes_only_when_explicitly_enabled(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, enable_github_feedback=True)
+    app = build_v2_telegram_application(
+        settings,
+        data_dir_override=tmp_path / "github-feedback-v2",
+    )
+
+    try:
+        assert app.github_feedback_client is not None
+        assert app.github_token_provider is not None
+        assert app.github_feedback_client.repository == "zhaocy02/tele-Amadeus"
+        assert app.github_feedback_client.branch == "main"
     finally:
         asyncio.run(app.aclose())

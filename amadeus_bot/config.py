@@ -11,7 +11,8 @@ from pydantic import BaseModel, SecretStr, field_validator
 EnvironmentName = Literal["development", "test", "production"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 ReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
-ProviderName = Literal["cpa", "deepseek"]
+LLMProviderName = Literal["cpa", "deepseek", "doubao"]
+WebSearchProviderName = Literal["cpa", "deepseek"]
 
 
 class ConfigurationError(ValueError):
@@ -31,7 +32,13 @@ class AppSettings(BaseModel):
     enable_spontaneity: bool = False
     enable_canon_examples: bool = False
     enable_web_search: bool = False
+    enable_github_feedback: bool = False
     autonomy_timezone: str = "Asia/Shanghai"
+
+    # GitHub feedback is a pinned public-repository capability, not generic GitHub access.
+    github_app_client_id: str | None = None
+    github_app_installation_id: int | None = None
+    github_app_private_key_path: Path | None = None
 
     # Existing AMADEUS_PROVIDER_* settings remain the CPA/Codex profile for compatibility.
     provider_base_url: str
@@ -39,13 +46,19 @@ class AppSettings(BaseModel):
     provider_model: str = "gpt-5.6-sol"
     provider_reasoning_effort: ReasoningEffort = "high"
 
-    llm_provider: ProviderName = "cpa"
-    web_search_provider: ProviderName = "cpa"
+    llm_provider: LLMProviderName = "cpa"
+    web_search_provider: WebSearchProviderName = "cpa"
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_api_key: SecretStr | None = None
     deepseek_model: str = "deepseek-v4-pro"
     deepseek_vision_model: str = "deepseek-v4-flash-vision-exp"
     deepseek_reasoning_effort: ReasoningEffort = "high"
+    doubao_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
+    doubao_api_key: SecretStr | None = None
+    doubao_model: str = "doubao-seed-evolving"
+    doubao_vision_model: str = "doubao-seed-evolving"
+    # Ark Responses uses its own thinking controls. Keep the generic adapter neutral by default.
+    doubao_reasoning_effort: ReasoningEffort = "none"
 
     request_timeout_seconds: float = 120.0
     persona_dir: Path
@@ -55,7 +68,12 @@ class AppSettings(BaseModel):
     runtime_db_path: Path
     log_level: LogLevel = "INFO"
 
-    @field_validator("provider_base_url", "deepseek_base_url", "telegram_api_base_url")
+    @field_validator(
+        "provider_base_url",
+        "deepseek_base_url",
+        "doubao_base_url",
+        "telegram_api_base_url",
+    )
     @classmethod
     def validate_http_url(cls, value: str) -> str:
         normalized = value.strip().rstrip("/")
@@ -75,13 +93,34 @@ class AppSettings(BaseModel):
             raise ValueError("telegram_proxy_url uses an unsupported scheme")
         return normalized
 
-    @field_validator("provider_model", "deepseek_model", "deepseek_vision_model")
+    @field_validator(
+        "provider_model",
+        "deepseek_model",
+        "deepseek_vision_model",
+        "doubao_model",
+        "doubao_vision_model",
+    )
     @classmethod
     def validate_model(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
             raise ValueError("provider model must not be empty")
         return normalized
+
+    @field_validator("github_app_client_id")
+    @classmethod
+    def validate_github_client_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("github_app_installation_id")
+    @classmethod
+    def validate_github_installation_id(cls, value: int | None) -> int | None:
+        if value is not None and value <= 0:
+            raise ValueError("github_app_installation_id must be positive")
+        return value
 
     @field_validator("autonomy_timezone")
     @classmethod
@@ -156,13 +195,29 @@ def _parse_reasoning_effort(raw: str, name: str) -> ReasoningEffort:
     return cast(ReasoningEffort, normalized)
 
 
-def _parse_provider_name(raw: str, name: str) -> ProviderName:
+def _parse_llm_provider_name(raw: str, name: str) -> LLMProviderName:
+    normalized = raw.strip().casefold() or "cpa"
+    aliases = {
+        "codex": "cpa",
+        "cpa/codex": "cpa",
+        "ds": "deepseek",
+        "豆包": "doubao",
+        "ark": "doubao",
+        "volcengine": "doubao",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if normalized not in {"cpa", "deepseek", "doubao"}:
+        raise ConfigurationError(f"{name} must be one of: cpa, deepseek, doubao")
+    return cast(LLMProviderName, normalized)
+
+
+def _parse_web_search_provider_name(raw: str, name: str) -> WebSearchProviderName:
     normalized = raw.strip().casefold() or "cpa"
     aliases = {"codex": "cpa", "cpa/codex": "cpa", "ds": "deepseek"}
     normalized = aliases.get(normalized, normalized)
     if normalized not in {"cpa", "deepseek"}:
         raise ConfigurationError(f"{name} must be one of: cpa, deepseek")
-    return cast(ProviderName, normalized)
+    return cast(WebSearchProviderName, normalized)
 
 
 def _parse_bool(raw: str, name: str) -> bool:
@@ -172,6 +227,19 @@ def _parse_bool(raw: str, name: str) -> bool:
     if normalized in {"1", "true", "yes", "on"}:
         return True
     raise ConfigurationError(f"{name} must be true/false")
+
+
+def _parse_optional_positive_int(raw: str, name: str) -> int | None:
+    normalized = raw.strip()
+    if not normalized:
+        return None
+    try:
+        value = int(normalized)
+    except ValueError as exc:
+        raise ConfigurationError(f"{name} must be a positive integer") from exc
+    if value <= 0:
+        raise ConfigurationError(f"{name} must be a positive integer")
+    return value
 
 
 def _parse_timeout(raw: str) -> float:
@@ -208,7 +276,30 @@ def load_settings(
     data_dir = _resolve_path(root, data_dir_raw)
     provider_api_key = source.get("AMADEUS_PROVIDER_API_KEY", "").strip()
     deepseek_api_key = source.get("AMADEUS_DEEPSEEK_API_KEY", "").strip()
+    doubao_api_key = source.get("AMADEUS_DOUBAO_API_KEY", "").strip()
     telegram_proxy_url = source.get("AMADEUS_TELEGRAM_PROXY_URL", "").strip() or None
+    enable_github_feedback = _parse_bool(
+        source.get("AMADEUS_ENABLE_GITHUB_FEEDBACK", "false"),
+        "AMADEUS_ENABLE_GITHUB_FEEDBACK",
+    )
+    github_app_client_id = source.get("AMADEUS_GITHUB_APP_CLIENT_ID", "").strip() or None
+    github_app_installation_id = _parse_optional_positive_int(
+        source.get("AMADEUS_GITHUB_APP_INSTALLATION_ID", ""),
+        "AMADEUS_GITHUB_APP_INSTALLATION_ID",
+    )
+    github_key_raw = source.get("AMADEUS_GITHUB_APP_PRIVATE_KEY_PATH", "").strip()
+    github_app_private_key_path = _resolve_path(root, github_key_raw) if github_key_raw else None
+    if enable_github_feedback:
+        missing = []
+        if github_app_client_id is None:
+            missing.append("AMADEUS_GITHUB_APP_CLIENT_ID")
+        if github_app_installation_id is None:
+            missing.append("AMADEUS_GITHUB_APP_INSTALLATION_ID")
+        if github_app_private_key_path is None:
+            missing.append("AMADEUS_GITHUB_APP_PRIVATE_KEY_PATH")
+        if missing:
+            joined = ", ".join(missing)
+            raise ConfigurationError(f"GitHub feedback enabled but configuration missing: {joined}")
 
     try:
         return AppSettings(
@@ -239,6 +330,10 @@ def load_settings(
                 source.get("AMADEUS_ENABLE_WEB_SEARCH", "false"),
                 "AMADEUS_ENABLE_WEB_SEARCH",
             ),
+            enable_github_feedback=enable_github_feedback,
+            github_app_client_id=github_app_client_id,
+            github_app_installation_id=github_app_installation_id,
+            github_app_private_key_path=github_app_private_key_path,
             autonomy_timezone=source.get("AMADEUS_AUTONOMY_TIMEZONE", "Asia/Shanghai"),
             provider_base_url=_required(source, "AMADEUS_PROVIDER_BASE_URL"),
             provider_api_key=SecretStr(provider_api_key) if provider_api_key else None,
@@ -247,11 +342,11 @@ def load_settings(
                 source.get("AMADEUS_PROVIDER_REASONING_EFFORT", "high"),
                 "AMADEUS_PROVIDER_REASONING_EFFORT",
             ),
-            llm_provider=_parse_provider_name(
+            llm_provider=_parse_llm_provider_name(
                 source.get("AMADEUS_LLM_PROVIDER", "cpa"),
                 "AMADEUS_LLM_PROVIDER",
             ),
-            web_search_provider=_parse_provider_name(
+            web_search_provider=_parse_web_search_provider_name(
                 source.get("AMADEUS_WEB_SEARCH_PROVIDER", "cpa"),
                 "AMADEUS_WEB_SEARCH_PROVIDER",
             ),
@@ -268,6 +363,23 @@ def load_settings(
             deepseek_reasoning_effort=_parse_reasoning_effort(
                 source.get("AMADEUS_DEEPSEEK_REASONING_EFFORT", "high"),
                 "AMADEUS_DEEPSEEK_REASONING_EFFORT",
+            ),
+            doubao_base_url=source.get(
+                "AMADEUS_DOUBAO_BASE_URL",
+                "https://ark.cn-beijing.volces.com/api/v3",
+            ),
+            doubao_api_key=SecretStr(doubao_api_key) if doubao_api_key else None,
+            doubao_model=source.get(
+                "AMADEUS_DOUBAO_MODEL",
+                "doubao-seed-evolving",
+            ),
+            doubao_vision_model=source.get(
+                "AMADEUS_DOUBAO_VISION_MODEL",
+                "doubao-seed-evolving",
+            ),
+            doubao_reasoning_effort=_parse_reasoning_effort(
+                source.get("AMADEUS_DOUBAO_REASONING_EFFORT", "none"),
+                "AMADEUS_DOUBAO_REASONING_EFFORT",
             ),
             request_timeout_seconds=_parse_timeout(
                 source.get("AMADEUS_REQUEST_TIMEOUT_SECONDS", "120")

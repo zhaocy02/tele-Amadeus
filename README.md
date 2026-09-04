@@ -18,10 +18,12 @@ Source-aware Canon Behavior RAG
 Vision-capable provider routing
 Direct-turn Web Search with provenance
 Long-horizon autonomy
-Short-horizon spontaneity implementation
+Bounded short-horizon spontaneity episodes
 CPA/Codex + DeepSeek provider registry
 Production-oriented observability and deployment helpers
 ```
+
+Short-horizon spontaneity is implemented as a bounded thought episode rather than an unbounded self-triggering loop. The default design uses a 1–30s first target gap, 3–15s later gaps, independent `SILENT | CONTINUE` decisions at each depth, user-input priority, and a hard maximum of seven follow-ups. Later depths become progressively less likely, so the cap is a safety boundary rather than a target message count.
 
 The current Persona/Canon phase has completed its first production loop:
 

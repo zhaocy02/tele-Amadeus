@@ -10,6 +10,28 @@ from .dispatcher import (
     render_web_search_tool_output,
     web_search_context_note,
 )
+from .github_app_auth import (
+    GitHubAppInstallationConfig,
+    GitHubAppInstallationTokenProvider,
+)
+from .github_feedback import (
+    GitHubAccessTokenProvider,
+    GitHubCommentProposal,
+    GitHubFeedbackAPIError,
+    GitHubFeedbackClient,
+    GitHubFeedbackConfigurationError,
+    GitHubFeedbackConfirmationRequired,
+    GitHubFeedbackError,
+    GitHubFeedbackGuardError,
+    GitHubFeedbackStaleProposal,
+    GitHubIssueProposal,
+    GitHubIssueSummary,
+    GitHubPublicFile,
+    GitHubRepositoryState,
+    PreparedGitHubComment,
+    PreparedGitHubIssue,
+    PublicOutboundGuard,
+)
 from .responses_web_search import ResponsesWebSearchProvider, WebSearchProviderRegistry
 from .web_search import (
     CPAWebSearchProvider,
@@ -23,6 +45,24 @@ from .web_search import (
 __all__ = [
     "CPAWebSearchProvider",
     "CharacterToolDispatcher",
+    "GitHubAccessTokenProvider",
+    "GitHubAppInstallationConfig",
+    "GitHubAppInstallationTokenProvider",
+    "GitHubCommentProposal",
+    "GitHubFeedbackAPIError",
+    "GitHubFeedbackClient",
+    "GitHubFeedbackConfigurationError",
+    "GitHubFeedbackConfirmationRequired",
+    "GitHubFeedbackError",
+    "GitHubFeedbackGuardError",
+    "GitHubFeedbackStaleProposal",
+    "GitHubIssueProposal",
+    "GitHubIssueSummary",
+    "GitHubPublicFile",
+    "GitHubRepositoryState",
+    "PreparedGitHubComment",
+    "PreparedGitHubIssue",
+    "PublicOutboundGuard",
     "ResponsesWebSearchProvider",
     "WebSearchError",
     "WebSearchEvidence",

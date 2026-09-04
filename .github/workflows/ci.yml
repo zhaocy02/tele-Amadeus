@@ -1,9 +1,12 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -11,6 +14,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         python-version: ["3.11", "3.12"]
@@ -26,11 +30,13 @@ jobs:
           bash -n scripts/deploy-prod.sh
           bash -n scripts/vision-provider-smoke.sh
           bash -n scripts/provider-capability-smoke.sh
+          bash -n scripts/github-feedback-smoke.sh
           bash -n scripts/bootstrap-sg-canon.sh
           bash -n scripts/build-sg0-canon.sh
           bash scripts/deploy-prod.sh --help >/dev/null
           bash scripts/vision-provider-smoke.sh --help >/dev/null
           bash scripts/provider-capability-smoke.sh --help >/dev/null
+          bash scripts/github-feedback-smoke.sh --help >/dev/null
           bash scripts/bootstrap-sg-canon.sh --help >/dev/null
           bash scripts/build-sg0-canon.sh --help >/dev/null
       - name: Install
@@ -42,6 +48,7 @@ jobs:
           python -m amadeus_bot.telemetry_cli --help >/dev/null
           python -m amadeus_bot.vision_smoke --help >/dev/null
           python -m amadeus_bot.provider_capability_smoke --help >/dev/null
+          python -m amadeus_bot.github_feedback_smoke --help >/dev/null
           python scripts/inspect_canon_corpus.py --help >/dev/null
       - name: Lint
         run: ruff check .

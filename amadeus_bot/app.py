@@ -50,6 +50,7 @@ from amadeus_bot.runtime import (
     V2ConversationCoordinator,
 )
 from amadeus_bot.telegram import (
+    GitHubFeedbackCommandRouter,
     ProviderAwareV2TelegramDeliveryAdapter,
     TelegramHTTPGateway,
     TelegramMessageRouter,
@@ -59,9 +60,18 @@ from amadeus_bot.telegram import (
 from amadeus_bot.tools import (
     CharacterToolDispatcher,
     CPAWebSearchProvider,
+    GitHubAppInstallationConfig,
+    GitHubAppInstallationTokenProvider,
+    GitHubFeedbackClient,
     ResponsesWebSearchProvider,
     WebSearchProvider,
     WebSearchProviderRegistry,
+)
+
+_GITHUB_FEEDBACK_REPOSITORY = "zhaocy02/tele-Amadeus"
+_GITHUB_FEEDBACK_BRANCH = "main"
+_GITHUB_FEEDBACK_LABELS = frozenset(
+    {"from-amadeus", "observation", "idea", "possible-bug", "character", "memory"}
 )
 
 
@@ -127,9 +137,15 @@ class V2TelegramApplication:
     telegram: TelegramHTTPGateway
     delivery: V2TelegramDeliveryAdapter
     router: V2TelegramMessageRouter
+    github_feedback_client: GitHubFeedbackClient | None = None
+    github_token_provider: GitHubAppInstallationTokenProvider | None = None
 
     async def aclose(self) -> None:
         await self.router.aclose()
+        if self.github_feedback_client is not None:
+            await self.github_feedback_client.aclose()
+        if self.github_token_provider is not None:
+            await self.github_token_provider.aclose()
         await self.telegram.aclose()
         await self.runtime.aclose()
 
@@ -171,6 +187,23 @@ def build_v2_provider_registry(settings: AppSettings) -> ProviderRegistry:
                 provider=deepseek,
                 text_model=settings.deepseek_model,
                 vision_model=settings.deepseek_vision_model,
+            )
+        )
+    if settings.doubao_api_key is not None:
+        doubao = ResponsesAPIProvider(
+            base_url=settings.doubao_base_url,
+            api_key=settings.doubao_api_key.get_secret_value(),
+            default_model=settings.doubao_model,
+            reasoning_effort=settings.doubao_reasoning_effort,
+            timeout_seconds=settings.request_timeout_seconds,
+        )
+        profiles.append(
+            ProviderProfile(
+                name="doubao",
+                display_name="Doubao / Volcengine Ark",
+                provider=doubao,
+                text_model=settings.doubao_model,
+                vision_model=settings.doubao_vision_model,
             )
         )
     try:
@@ -238,6 +271,48 @@ def build_telegram_gateway(settings: AppSettings) -> TelegramHTTPGateway:
         proxy_url=settings.telegram_proxy_url,
         timeout_seconds=settings.request_timeout_seconds,
     )
+
+
+def build_github_feedback_control(
+    settings: AppSettings,
+    *,
+    telegram: TelegramHTTPGateway,
+) -> tuple[
+    GitHubFeedbackCommandRouter | None,
+    GitHubFeedbackClient | None,
+    GitHubAppInstallationTokenProvider | None,
+]:
+    """Compose the pinned public-Issues capability only behind the explicit process gate."""
+
+    if not settings.enable_github_feedback:
+        return None, None, None
+
+    client_id = settings.github_app_client_id
+    installation_id = settings.github_app_installation_id
+    private_key_path = settings.github_app_private_key_path
+    if client_id is None or installation_id is None or private_key_path is None:
+        raise ConfigurationError(
+            "GitHub feedback enabled without complete GitHub App configuration"
+        )
+
+    token_provider = GitHubAppInstallationTokenProvider(
+        GitHubAppInstallationConfig(
+            client_id=client_id,
+            installation_id=installation_id,
+            private_key_path=private_key_path,
+            repository=_GITHUB_FEEDBACK_REPOSITORY,
+            timeout_seconds=min(settings.request_timeout_seconds, 120.0),
+        )
+    )
+    client = GitHubFeedbackClient(
+        repository=_GITHUB_FEEDBACK_REPOSITORY,
+        branch=_GITHUB_FEEDBACK_BRANCH,
+        token_provider=token_provider,
+        allowed_labels=_GITHUB_FEEDBACK_LABELS,
+        timeout_seconds=min(settings.request_timeout_seconds, 120.0),
+    )
+    command = GitHubFeedbackCommandRouter(gateway=telegram, feedback=client)
+    return command, client, token_provider
 
 
 def build_application(settings: AppSettings) -> AmadeusApplication:
@@ -405,6 +480,10 @@ def build_v2_telegram_application(
         retrospective_interval_turns=retrospective_interval_turns,
     )
     telegram = build_telegram_gateway(settings)
+    github_feedback, github_feedback_client, github_token_provider = build_github_feedback_control(
+        settings,
+        telegram=telegram,
+    )
     autonomy_generator = AutonomyMessageGenerator(
         provider=runtime.provider,
         persona=runtime.persona,
@@ -430,6 +509,7 @@ def build_v2_telegram_application(
     )
     router = V2TelegramMessageRouter(
         provider_control=runtime.provider_control,
+        github_feedback=github_feedback,
         autonomy_tuning=runtime.autonomy_tuning,
         gateway=telegram,
         delivery=delivery,
@@ -452,4 +532,6 @@ def build_v2_telegram_application(
         telegram=telegram,
         delivery=delivery,
         router=router,
+        github_feedback_client=github_feedback_client,
+        github_token_provider=github_token_provider,
     )

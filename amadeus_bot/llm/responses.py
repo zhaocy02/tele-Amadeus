@@ -29,14 +29,14 @@ class _ResponsesContinuation:
 
 
 class ResponsesAPIProvider:
-    """OpenAI-compatible Responses API adapter used by the current CPA path.
+    """OpenAI-compatible Responses API adapter used by the current provider profiles.
 
-    The domain-facing interface remains ``LLMProvider``. CPA is an implementation detail here,
-    which allows a later provider replacement without coupling Character Runtime code to CPA.
+    The domain-facing interface remains ``LLMProvider``. Concrete upstreams are implementation
+    details here, which keeps Character Runtime code independent from provider identity.
 
     ``LLMRequest.metadata`` is internal runtime trace metadata. It is intentionally not serialized
-    onto the CPA wire request because CPA's Responses compatibility surface does not accept the
-    upstream ``metadata`` request parameter.
+    onto the wire request because compatibility surfaces do not universally accept the upstream
+    ``metadata`` request parameter.
 
     Function-call continuation state is opaque to Character Runtime. The adapter replays prior
     Responses output items, including reasoning items when present, before appending function
@@ -181,7 +181,11 @@ class ResponsesAPIProvider:
             await self._client.aclose()
 
     def _endpoint(self, resource: str) -> str:
-        if self._base_url.endswith("/v1"):
+        # CPA/DeepSeek historically use either a host root or /v1. Ark exposes its OpenAI-compatible
+        # Responses surface under /api/v3. Respect any explicit trailing /vN path instead of
+        # inserting another /v1 segment.
+        version_segment = self._base_url.rsplit("/", 1)[-1]
+        if len(version_segment) > 1 and version_segment[0] == "v" and version_segment[1:].isdigit():
             return f"{self._base_url}/{resource}"
         return f"{self._base_url}/v1/{resource}"
 

@@ -37,8 +37,22 @@ class StoredSpontaneityDelivery:
     evaluation_id: int | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class StoredSpontaneityEpisodeMessage:
+    episode_message_id: int
+    chat_id: int
+    generation: int
+    episode_id: str
+    source_turn_id: str
+    sequence_index: int
+    delivery_source_turn_id: str
+    evaluation_id: int | None
+    delivery_id: int | None
+    recorded_at: datetime
+
+
 class SQLiteSpontaneityStore:
-    """Durable observation and delivery counters for short-horizon continuations."""
+    """Durable observation, counters, and episode lineage for short-horizon continuations."""
 
     def __init__(self, filename: Path) -> None:
         filename.parent.mkdir(parents=True, exist_ok=True)
@@ -73,6 +87,21 @@ class SQLiteSpontaneityStore:
                 CREATE UNIQUE INDEX IF NOT EXISTS spontaneity_deliveries_evaluation
                   ON spontaneity_deliveries(evaluation_id)
                   WHERE evaluation_id IS NOT NULL;
+                CREATE TABLE IF NOT EXISTS spontaneity_episode_messages (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  chat_id TEXT NOT NULL,
+                  generation INTEGER NOT NULL,
+                  episode_id TEXT NOT NULL,
+                  source_turn_id TEXT NOT NULL,
+                  sequence_index INTEGER NOT NULL CHECK(sequence_index >= 1),
+                  delivery_source_turn_id TEXT NOT NULL UNIQUE,
+                  evaluation_id INTEGER,
+                  delivery_id INTEGER,
+                  recorded_at INTEGER NOT NULL,
+                  UNIQUE(episode_id, sequence_index)
+                );
+                CREATE INDEX IF NOT EXISTS spontaneity_episode_messages_recent
+                  ON spontaneity_episode_messages(chat_id, generation, recorded_at DESC, id DESC);
                 """
             )
 
@@ -195,6 +224,81 @@ class SQLiteSpontaneityStore:
             evaluation_id=evaluation_id,
         )
 
+    def record_episode_message(
+        self,
+        chat_id: int,
+        generation: int,
+        *,
+        episode_id: str,
+        source_turn_id: str,
+        sequence_index: int,
+        delivery_source_turn_id: str,
+        at: datetime,
+        evaluation_id: int | None = None,
+        delivery_id: int | None = None,
+    ) -> StoredSpontaneityEpisodeMessage:
+        self._validate_chat_generation(chat_id, generation)
+        self._validate_aware(at)
+        episode = episode_id.strip()
+        source = source_turn_id.strip()
+        delivery_source = delivery_source_turn_id.strip()
+        if not episode or not source or not delivery_source:
+            raise ValueError("spontaneity episode identifiers must not be empty")
+        if sequence_index < 1:
+            raise ValueError("spontaneity sequence_index must be positive")
+        if evaluation_id is not None and evaluation_id <= 0:
+            raise ValueError("spontaneity evaluation_id must be positive")
+        if delivery_id is not None and delivery_id <= 0:
+            raise ValueError("spontaneity delivery_id must be positive")
+
+        existing = self._db.execute(
+            """
+            SELECT id, chat_id, generation, episode_id, source_turn_id, sequence_index,
+                   delivery_source_turn_id, evaluation_id, delivery_id, recorded_at
+            FROM spontaneity_episode_messages
+            WHERE episode_id = ? AND sequence_index = ?
+            """,
+            (episode, sequence_index),
+        ).fetchone()
+        if existing is not None:
+            return self._episode_message_from_row(existing)
+
+        timestamp = int(at.timestamp())
+        with self._db:
+            cursor = self._db.execute(
+                """
+                INSERT INTO spontaneity_episode_messages(
+                  chat_id, generation, episode_id, source_turn_id, sequence_index,
+                  delivery_source_turn_id, evaluation_id, delivery_id, recorded_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(chat_id),
+                    generation,
+                    episode,
+                    source,
+                    sequence_index,
+                    delivery_source,
+                    evaluation_id,
+                    delivery_id,
+                    timestamp,
+                ),
+            )
+        if cursor.lastrowid is None:
+            raise RuntimeError("SQLite did not return spontaneity episode-message ID")
+        return StoredSpontaneityEpisodeMessage(
+            episode_message_id=int(cursor.lastrowid),
+            chat_id=chat_id,
+            generation=generation,
+            episode_id=episode,
+            source_turn_id=source,
+            sequence_index=sequence_index,
+            delivery_source_turn_id=delivery_source,
+            evaluation_id=evaluation_id,
+            delivery_id=delivery_id,
+            recorded_at=datetime.fromtimestamp(timestamp, tz=UTC),
+        )
+
     def delivery_stats(
         self,
         chat_id: int,
@@ -280,6 +384,24 @@ class SQLiteSpontaneityStore:
         rows = self._db.execute(sql, tuple(params)).fetchall()
         return tuple(self._delivery_from_row(row) for row in rows)
 
+    def list_episode_messages(
+        self,
+        episode_id: str,
+    ) -> tuple[StoredSpontaneityEpisodeMessage, ...]:
+        episode = episode_id.strip()
+        if not episode:
+            raise ValueError("spontaneity episode_id must not be empty")
+        rows = self._db.execute(
+            """
+            SELECT id, chat_id, generation, episode_id, source_turn_id, sequence_index,
+                   delivery_source_turn_id, evaluation_id, delivery_id, recorded_at
+            FROM spontaneity_episode_messages
+            WHERE episode_id = ? ORDER BY sequence_index ASC, id ASC
+            """,
+            (episode,),
+        ).fetchall()
+        return tuple(self._episode_message_from_row(row) for row in rows)
+
     @staticmethod
     def _evaluation_from_row(row: sqlite3.Row) -> StoredSpontaneityEvaluation:
         return StoredSpontaneityEvaluation(
@@ -305,6 +427,23 @@ class SQLiteSpontaneityStore:
             evaluation_id=(
                 None if row["evaluation_id"] is None else int(row["evaluation_id"])
             ),
+        )
+
+    @staticmethod
+    def _episode_message_from_row(row: sqlite3.Row) -> StoredSpontaneityEpisodeMessage:
+        return StoredSpontaneityEpisodeMessage(
+            episode_message_id=int(row["id"]),
+            chat_id=int(row["chat_id"]),
+            generation=int(row["generation"]),
+            episode_id=str(row["episode_id"]),
+            source_turn_id=str(row["source_turn_id"]),
+            sequence_index=int(row["sequence_index"]),
+            delivery_source_turn_id=str(row["delivery_source_turn_id"]),
+            evaluation_id=(
+                None if row["evaluation_id"] is None else int(row["evaluation_id"])
+            ),
+            delivery_id=None if row["delivery_id"] is None else int(row["delivery_id"]),
+            recorded_at=datetime.fromtimestamp(int(row["recorded_at"]), tz=UTC),
         )
 
     @staticmethod

@@ -264,7 +264,10 @@ def test_status_defaults_to_human_dashboard_and_debug_keeps_machine_view(tmp_pat
             assert "autonomy_idle_contact_drive=" in debug
             assert "autonomy_contact_urge=" in debug
             assert "autonomy_raw_motivation_threshold=" in debug
-            assert "spontaneity_live_policy=delay:6-50s cooldown:2m max:unlimited" in debug
+            assert (
+                "spontaneity_live_policy=first:1-30s chain:3-15s "
+                "cooldown:2m max:unlimited"
+            ) in debug
 
             autonomy_message = IncomingMessage(
                 chat_id=10,
@@ -276,7 +279,10 @@ def test_status_defaults_to_human_dashboard_and_debug_keeps_machine_view(tmp_pat
             await router.handle(autonomy_message)
             autonomy_text = gateway.messages[-1][1]
             assert "policy=opportunity:5m idle:3m base_cooldown:30m max:24/24h" in autonomy_text
-            assert "spontaneity_policy=delay:6-50s cooldown:2m max:unlimited" in autonomy_text
+            assert (
+                "spontaneity_policy=first:1-30s chain:3-15s cooldown:2m "
+                "max:unlimited episode-cap:7"
+            ) in autonomy_text
         finally:
             await router.aclose()
             memory.close()

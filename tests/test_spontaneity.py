@@ -26,7 +26,7 @@ class FixedProvider:
         return LLMResponse(text=self.text, model="fake-spontaneity")
 
 
-def _opportunity() -> SpontaneityOpportunity:
+def _opportunity(sequence_index: int = 1) -> SpontaneityOpportunity:
     return SpontaneityOpportunity(
         source_turn_id="turn_spontaneity_1",
         user_text="你刚才说这个设计没问题，但真的没有其他漏洞了吗？",
@@ -38,21 +38,34 @@ def _opportunity() -> SpontaneityOpportunity:
             LLMMessage(MessageRole.ASSISTANT, "嗯，先看边界条件。"),
         ),
         created_at=datetime(2026, 9, 3, 2, 0, tzinfo=UTC),
+        sequence_index=sequence_index,
     )
 
 
-def test_spontaneity_defaults_are_lively_without_daily_cap() -> None:
+def test_spontaneity_defaults_use_bounded_episode_policy() -> None:
     config = SpontaneityConfig()
 
-    assert config.min_delay == timedelta(seconds=6)
-    assert config.max_delay == timedelta(seconds=50)
+    assert config.min_delay == timedelta(seconds=1)
+    assert config.max_delay == timedelta(seconds=30)
+    assert config.chain_min_delay == timedelta(seconds=3)
+    assert config.chain_max_delay == timedelta(seconds=15)
     assert config.cooldown == timedelta(minutes=2)
     assert isinf(config.max_messages_per_24h)
+    assert config.max_followups_per_episode == 7
     assert config.min_motivation == 0.45
     assert config.direct_answer_sample_rate == 0.55
     assert config.short_answer_sample_rate == 0.20
     assert config.interrupt_sample_rate == 0.12
     assert config.interrupt_grace_seconds == 1.25
+    assert len(config.continuation_sample_rates) >= 6
+    assert all(
+        later <= earlier
+        for earlier, later in zip(
+            config.continuation_sample_rates,
+            config.continuation_sample_rates[1:],
+            strict=False,
+        )
+    )
 
 
 def test_spontaneity_gate_skips_trivial_and_photo_turns() -> None:
@@ -85,7 +98,28 @@ def test_spontaneity_gate_accepts_expressive_turns_and_delay_is_stable() -> None
     first = gate.delay_for_turn("turn_expressive")
     second = gate.delay_for_turn("turn_expressive")
     assert first == second
-    assert 6.0 <= first <= 50.0
+    assert 1.0 <= first <= 30.0
+
+    chain_first = gate.delay_for_followup("turn_expressive", 2)
+    chain_second = gate.delay_for_followup("turn_expressive", 2)
+    assert chain_first == chain_second
+    assert 3.0 <= chain_first <= 15.0
+
+
+def test_episode_depth_gate_is_bounded_and_deterministic() -> None:
+    config = SpontaneityConfig(
+        continuation_sample_rates=(1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+    )
+    gate = SpontaneityOpportunityGate(config)
+
+    assert gate.followup_allowed("turn_episode", 1)
+    for sequence_index in range(2, 8):
+        assert gate.followup_allowed("turn_episode", sequence_index)
+    assert not gate.followup_allowed("turn_episode", 8)
+
+    default_gate = SpontaneityOpportunityGate()
+    first = default_gate.followup_allowed("turn_episode", 3)
+    assert default_gate.followup_allowed("turn_episode", 3) is first
 
 
 def test_short_answer_and_direct_answer_sampling_are_deterministic() -> None:
@@ -140,7 +174,7 @@ def test_spontaneity_composer_accepts_grounded_tangent() -> None:
             persona=load_persona_core(Path("profiles/v2/persona_core.json")),
         )
 
-        decision = await composer.compose(_opportunity())
+        decision = await composer.compose(_opportunity(sequence_index=2))
 
         assert decision.action is SpontaneityAction.CONTINUE
         assert decision.motivation == 0.78
@@ -148,10 +182,12 @@ def test_spontaneity_composer_accepts_grounded_tangent() -> None:
         assert len(provider.requests) == 1
         request = provider.requests[0]
         assert request.metadata["prompt_version"] == SPONTANEITY_PROMPT_VERSION
+        assert request.metadata["sequence_index"] == 2
         rendered = "\n".join(message.content for message in request.messages)
-        assert "source_assistant_reply" in rendered
-        assert "slightly tangential" in rendered
+        assert "latest_assistant_utterance" in rendered
+        assert "sequence_index" in rendered
         assert "mildly unrelated tangent" in rendered
+        assert "Do not manufacture another message" in rendered
 
     asyncio.run(scenario())
 

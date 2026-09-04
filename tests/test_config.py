@@ -29,6 +29,7 @@ def test_load_settings_validates_and_normalizes(tmp_path: Path) -> None:
     assert settings.enable_long_polling is False
     assert settings.enable_canon_examples is False
     assert settings.enable_web_search is False
+    assert settings.enable_github_feedback is False
 
 
 def test_v2_persona_path_can_be_overridden(tmp_path: Path) -> None:
@@ -71,6 +72,32 @@ def test_web_search_gate_is_default_off_and_strictly_parsed(tmp_path: Path) -> N
 
     env["AMADEUS_ENABLE_WEB_SEARCH"] = "sometimes"
     with pytest.raises(ConfigurationError, match="AMADEUS_ENABLE_WEB_SEARCH"):
+        load_settings(env, cwd=tmp_path)
+
+
+def test_github_feedback_gate_requires_complete_app_configuration(tmp_path: Path) -> None:
+    env = valid_env()
+    env["AMADEUS_ENABLE_GITHUB_FEEDBACK"] = "true"
+
+    with pytest.raises(ConfigurationError, match="AMADEUS_GITHUB_APP_CLIENT_ID"):
+        load_settings(env, cwd=tmp_path)
+
+    env["AMADEUS_GITHUB_APP_CLIENT_ID"] = "Iv1.example"
+    env["AMADEUS_GITHUB_APP_INSTALLATION_ID"] = "12345"
+    env["AMADEUS_GITHUB_APP_PRIVATE_KEY_PATH"] = "./private/app.pem"
+    settings = load_settings(env, cwd=tmp_path)
+
+    assert settings.enable_github_feedback is True
+    assert settings.github_app_client_id == "Iv1.example"
+    assert settings.github_app_installation_id == 12345
+    assert settings.github_app_private_key_path == (tmp_path / "private/app.pem").resolve()
+
+
+def test_github_feedback_installation_id_must_be_positive_integer(tmp_path: Path) -> None:
+    env = valid_env()
+    env["AMADEUS_GITHUB_APP_INSTALLATION_ID"] = "not-an-id"
+
+    with pytest.raises(ConfigurationError, match="AMADEUS_GITHUB_APP_INSTALLATION_ID"):
         load_settings(env, cwd=tmp_path)
 
 
