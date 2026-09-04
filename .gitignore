@@ -19,11 +19,11 @@ venv/
 .env.*
 !.env.example
 
-# Runtime/private state
-data/
-runtime/
-logs/
-backups/
+# Runtime/private state (repository-root only; do not hide amadeus_bot/runtime source)
+/data/
+/runtime/
+/logs/
+/backups/
 *.sqlite
 *.sqlite3
 *.db
