@@ -38,8 +38,8 @@ from .session_store import (
     StoredSpontaneityConversationMessage,
 )
 from .spontaneity_store import (
-    SQLiteSpontaneityStore,
     SpontaneityDeliveryStats,
+    SQLiteSpontaneityStore,
     StoredSpontaneityDelivery,
     StoredSpontaneityEvaluation,
 )

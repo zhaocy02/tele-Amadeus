@@ -232,7 +232,8 @@ class SQLiteTurnTelemetryStore:
         if not normalized:
             raise ValueError("turn id/prefix must not be empty")
         rows = self._db.execute(
-            "SELECT turn_id FROM v2_turn_telemetry WHERE turn_id LIKE ? ORDER BY observed_at DESC LIMIT 2",
+            "SELECT turn_id FROM v2_turn_telemetry "
+            "WHERE turn_id LIKE ? ORDER BY observed_at DESC LIMIT 2",
             (normalized + "%",),
         ).fetchall()
         if not rows:
@@ -281,7 +282,11 @@ class SQLiteTurnTelemetryStore:
         next_memory = memory_label if memory_label is not None else (
             existing.memory_label if existing is not None else None
         )
-        next_note = note.strip() if note is not None else (existing.note if existing is not None else "")
+        next_note = (
+            note.strip()
+            if note is not None
+            else (existing.note if existing is not None else "")
+        )
         timestamp = at or datetime.now(UTC)
         self._validate_aware(timestamp)
         with self._db:
@@ -355,9 +360,15 @@ class SQLiteTurnTelemetryStore:
         return TurnTelemetryRecord(
             turn_id=str(row["turn_id"]),
             chat_id=int(row["chat_id"]),
-            user_message_id=(int(row["user_message_id"]) if row["user_message_id"] is not None else None),
+            user_message_id=(
+                int(row["user_message_id"])
+                if row["user_message_id"] is not None
+                else None
+            ),
             assistant_message_id=(
-                int(row["assistant_message_id"]) if row["assistant_message_id"] is not None else None
+                int(row["assistant_message_id"])
+                if row["assistant_message_id"] is not None
+                else None
             ),
             telegram_message_id=(
                 int(row["telegram_message_id"]) if row["telegram_message_id"] is not None else None

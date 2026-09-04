@@ -236,7 +236,8 @@ class AutonomyRuntimeCoordinator:
             relationship_summary=effective_state.relationship_tone,
         )
 
-        # Persist cadence before any model call so provider failure/restart cannot create a retry loop.
+        # Persist cadence before any model call so provider failure/restart cannot
+        # create a retry loop.
         self._autonomy_store.mark_opportunity(chat_id, generation, at=timestamp)
         decision = await self._planner.decide(opportunity)
         stored = self._autonomy_store.record_evaluation(

@@ -253,7 +253,9 @@ def _import_pass(
 
                 cursor = db.execute(
                     """
-                    INSERT INTO conversation_messages(chat_id, generation, role, content, created_at)
+                    INSERT INTO conversation_messages(
+                        chat_id, generation, role, content, created_at
+                    )
                     VALUES (?, ?, ?, ?, ?)
                     """,
                     (
@@ -334,7 +336,9 @@ def _assert_no_unmanaged_transcript(
         (str(chat_id), generation),
     ).fetchone()
     if row is not None and int(row["count"]) != 0:
-        raise RuntimeError("continuity target already contains non-imported conversation transcript")
+        raise RuntimeError(
+            "continuity target already contains non-imported conversation transcript"
+        )
 
 
 def _verify_existing(row: sqlite3.Row, message: TelegramContinuityMessage, digest: str) -> None:

@@ -218,7 +218,9 @@ class ConversationSessionStore:
         telegram_message_id: int,
         at: datetime,
     ) -> StoredAutonomyConversationMessage:
-        """Persist one externally delivered proactive assistant message without inventing a user row."""
+        """Persist one externally delivered proactive assistant message
+        without inventing a user row.
+        """
 
         text = assistant_text.strip()
         normalized_action = action.strip()

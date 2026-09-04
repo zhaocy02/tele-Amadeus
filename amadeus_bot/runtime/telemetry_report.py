@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
 
 from .telemetry import SQLiteTurnTelemetryStore, TurnObservation, TurnTelemetryRecord
 
@@ -59,7 +59,9 @@ class TurnTelemetryReporter:
             total_turns=len(records),
             fast_turns=len(fast),
             llm_turns=len(llm),
-            turns_with_retrieved_memory=sum(bool(record.retrieved_memory_ids) for record in records),
+            turns_with_retrieved_memory=sum(
+                bool(record.retrieved_memory_ids) for record in records
+            ),
             retrospective_turns=sum(record.retrospective_triggered for record in records),
             warning_turns=sum(bool(record.warnings) for record in records),
             fast_response_wait=self._distribution(fast, lambda item: item.response_wait_ms),
@@ -85,7 +87,10 @@ class TurnTelemetryReporter:
             "Amadeus Phase 5.4 production observation",
             f"window={since_label}",
             f"turns={summary.total_turns}",
-            f"fast={summary.fast_turns} ({self._percentage(summary.fast_turns, summary.total_turns)})",
+            (
+                f"fast={summary.fast_turns} "
+                f"({self._percentage(summary.fast_turns, summary.total_turns)})"
+            ),
             f"llm={summary.llm_turns} ({self._percentage(summary.llm_turns, summary.total_turns)})",
             f"turns_with_retrieved_memory={summary.turns_with_retrieved_memory}",
             f"retrospective_turns={summary.retrospective_turns}",

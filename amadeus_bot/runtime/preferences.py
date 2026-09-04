@@ -62,7 +62,10 @@ class AutonomyPreferences:
 
     @property
     def quiet_window(self) -> str:
-        return f"{self._format_minute(self.quiet_start_minute)}-{self._format_minute(self.quiet_end_minute)}"
+        return (
+            f"{self._format_minute(self.quiet_start_minute)}-"
+            f"{self._format_minute(self.quiet_end_minute)}"
+        )
 
     @staticmethod
     def _format_minute(value: int) -> str:
