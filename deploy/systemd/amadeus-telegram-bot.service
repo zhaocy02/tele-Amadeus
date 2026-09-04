@@ -1,0 +1,33 @@
+[Unit]
+Description=Amadeus Telegram Bot v2
+Wants=network-online.target cli-proxy-api.service mihomo-codex.service
+After=network-online.target cli-proxy-api.service mihomo-codex.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/amadeus-bot
+EnvironmentFile=/opt/amadeus-bot/.env
+Environment=HOME=/opt/amadeus-bot
+UMask=0077
+
+# Fail closed if the legacy Amadeus v1 long-poller is still active. This check never stops v1.
+ExecStartPre=/usr/bin/bash -lc '! /usr/bin/systemctl --user is-active --quiet telegram-codex-cpa-bot.service'
+ExecStart=/opt/amadeus-bot/.venv/bin/python -m amadeus_bot run-v2 --confirm-polling
+
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+KillSignal=SIGTERM
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectProc=invisible
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/opt/amadeus-bot
+
+[Install]
+WantedBy=default.target

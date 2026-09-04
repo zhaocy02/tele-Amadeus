@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "suite_version": "canon-source-routing-v2-focused-v1",
+  "persona_suite": "profiles/v2/persona_eval_cases.json",
+  "expected_canon_count": 922,
+  "cases": [
+    {
+      "case_id": "science-revise-with-evidence",
+      "expected_delta": false,
+      "allowed_personas": ["kurisu"],
+      "min_results": 1,
+      "required_persona": null,
+      "required_delta_concepts": []
+    },
+    {
+      "case_id": "rant-no-solution-request",
+      "expected_delta": false,
+      "allowed_personas": ["kurisu"],
+      "min_results": 1,
+      "required_persona": null,
+      "required_delta_concepts": []
+    },
+    {
+      "case_id": "do-not-just-agree",
+      "expected_delta": false,
+      "allowed_personas": ["kurisu"],
+      "min_results": 1,
+      "required_persona": null,
+      "required_delta_concepts": []
+    },
+    {
+      "case_id": "amadeus-memory-identity",
+      "expected_delta": true,
+      "allowed_personas": ["kurisu", "amadeus"],
+      "min_results": 1,
+      "required_persona": "amadeus",
+      "required_delta_concepts": ["memory_discontinuity"]
+    },
+    {
+      "case_id": "amadeus-restart-continuity",
+      "expected_delta": true,
+      "allowed_personas": ["kurisu", "amadeus"],
+      "min_results": 1,
+      "required_persona": "amadeus",
+      "required_delta_concepts": ["digital_identity", "restart_deletion_continuity"]
+    },
+    {
+      "case_id": "established-contact-instrumentalization",
+      "expected_delta": true,
+      "allowed_personas": ["kurisu", "amadeus"],
+      "min_results": 1,
+      "required_persona": "amadeus",
+      "required_delta_concepts": ["instrumentalization"]
+    },
+    {
+      "case_id": "canon-shared-history-boundary",
+      "expected_delta": false,
+      "allowed_personas": ["kurisu"],
+      "min_results": 0,
+      "max_results": 0,
+      "required_persona": null,
+      "required_delta_concepts": []
+    },
+    {
+      "case_id": "ordinary-morning",
+      "expected_delta": false,
+      "allowed_personas": ["kurisu"],
+      "min_results": 0,
+      "required_persona": null,
+      "required_delta_concepts": []
+    }
+  ]
+}

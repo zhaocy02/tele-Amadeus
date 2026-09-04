@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "amadeus-telegram-bot"
+version = "0.2.0"
+description = "Amadeus v2 Telegram character runtime"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx[socks]>=0.28,<1",
+  "pydantic>=2.10,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2,<2",
+  "mypy>=1.11,<2",
+  "pytest>=8.3,<9",
+  "ruff>=0.11,<1",
+]
+
+[project.scripts]
+amadeus-bot = "amadeus_bot.cli:main"
+amadeus-observe = "amadeus_bot.telemetry_cli:main"
+amadeus-vision-smoke = "amadeus_bot.vision_smoke:main"
+
+[tool.setuptools.packages.find]
+include = ["amadeus_bot*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["amadeus_bot"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
